@@ -349,6 +349,18 @@ def main():
             st.write(f"Minimum multiplications: {st.session_state.m[i][j]}")
             parenthesization = print_optimal_parenthesization(st.session_state.s, i, j)
             st.write(f"Optimal parenthesization: {parenthesization}")
+
+            # --- START OF EXTRA CODE ---
+            matrices = get_matrices(st.session_state.dimensions)
+            try:
+                result_matrix = evaluate_parenthesization(matrices, st.session_state.s, 0, len(matrices) - 1)
+                st.subheader("Resultant Matrix")
+                st.write(np.array(result_matrix))
+            except ValueError as e:
+                st.error(f"Error during matrix multiplication: {e}")
+            # --- END OF EXTRA CODE ---
+
+    
     
     # Next step button
     with next_step_container:
