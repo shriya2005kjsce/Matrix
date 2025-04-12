@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import altair as alt
 import time
 
 def print_optimal_parenthesization(s, i, j):
@@ -9,103 +8,6 @@ def print_optimal_parenthesization(s, i, j):
         return f"A{i+1}"
     else:
         return f"({print_optimal_parenthesization(s, i, s[i][j])} × {print_optimal_parenthesization(s, s[i][j]+1, j)})"
-
-def create_heatmap_data(matrix, highlight_cell=None, highlight_k=None):
-    """Create data for Altair heatmap."""
-    n = len(matrix)
-    data = []
-    
-    for i in range(n):
-        for j in range(n):
-            if j >= i:  # Only use upper triangular part
-                value = matrix[i][j]
-                if value == float('inf'):
-                    value_str = "∞"
-                else:
-                    value_str = str(value)
-                
-                # Determine highlight type
-                highlight = "none"
-                if highlight_cell and highlight_cell == (i, j):
-                    highlight = "current"
-                elif highlight_k and ((i, highlight_k) == (highlight_cell[0], j) or (highlight_k+1, j) == (i, highlight_cell[1])):
-                    highlight = "k_related"
-                
-                data.append({
-                    'row': i,
-                    'col': j,
-                    'value': value if value != float('inf') else 0,
-                    'label': value_str,
-                    'highlight': highlight
-                })
-    
-    return pd.DataFrame(data)
-
-def create_heatmap_chart(df, title, color_scheme='blues'):
-    """Create an Altair heatmap from dataframe."""
-    # Base heatmap
-    base = alt.Chart(df).encode(
-        x=alt.X('col:O', axis=alt.Axis(title='j')),
-        y=alt.Y('row:O', axis=alt.Axis(title='i', orient='left')),
-        tooltip=['row', 'col', 'label']
-    )
-    
-    # Color cells based on value
-    heatmap = base.mark_rect().encode(
-        color=alt.Color('value:Q', 
-                       scale=alt.Scale(scheme=color_scheme),
-                       legend=alt.Legend(title='Value'))
-    )
-    
-    # Add text labels
-    text = base.mark_text().encode(
-        text='label:N',
-        color=alt.condition(
-            alt.datum.value > 100, 
-            alt.value('white'),
-            alt.value('black')
-        )
-    )
-    
-    # Add borders for highlighted cells
-    highlight_current = base.mark_rect(
-        stroke='red',
-        strokeWidth=2,
-        fill=None
-    ).transform_filter(
-        alt.datum.highlight == 'current'
-    )
-    
-    highlight_k = base.mark_rect(
-        stroke='orange',
-        strokeWidth=1,
-        fill=None
-    ).transform_filter(
-        alt.datum.highlight == 'k_related'
-    )
-    
-    # Combine layers
-    chart = (heatmap + text + highlight_current + highlight_k).properties(
-        title=title,
-        width=300,
-        height=300
-    )
-    
-    return chart
-
-def draw_tables_altair(m, s, highlight_cell=None, highlight_k=None):
-    """Create Altair charts for m and s tables."""
-    m_data = create_heatmap_data(m, highlight_cell, highlight_k)
-    s_data = create_heatmap_data(s, highlight_cell)
-    
-    m_chart = create_heatmap_chart(m_data, "Cost Table (m)", "blues")
-    s_chart = create_heatmap_chart(s_data, "Split Table (s)", "oranges")
-    
-    combined_chart = alt.hconcat(m_chart, s_chart).properties(
-        title="Matrix Chain Multiplication DP Table Filling"
-    )
-    
-    return combined_chart
 
 def initialize_session_state():
     """Initialize session state variables if they don't exist"""
@@ -230,6 +132,46 @@ def handle_next_step():
                 st.session_state.algorithm_complete = True
                 st.session_state.step_phase = 'complete'
 
+def display_tables(m, s, highlight_cell=None):
+    """Display the m and s tables in a simpler format"""
+    n = len(m)
+    
+    st.write("### Cost Table (m)")
+    m_data = []
+    for i in range(n):
+        row = []
+        for j in range(n):
+            if j >= i:
+                value = m[i][j]
+                if value == float('inf'):
+                    row.append("∞")
+                else:
+                    row.append(str(value))
+            else:
+                row.append("")
+        m_data.append(row)
+    
+    m_df = pd.DataFrame(m_data, 
+                       columns=[f"j={j}" for j in range(n)],
+                       index=[f"i={i}" for i in range(n)])
+    st.dataframe(m_df)
+    
+    st.write("### Split Table (s)")
+    s_data = []
+    for i in range(n):
+        row = []
+        for j in range(n):
+            if j >= i:
+                row.append(str(s[i][j]))
+            else:
+                row.append("")
+        s_data.append(row)
+    
+    s_df = pd.DataFrame(s_data, 
+                       columns=[f"j={j}" for j in range(n)],
+                       index=[f"i={i}" for i in range(n)])
+    st.dataframe(s_df)
+
 def main():
     st.title("Matrix Chain Multiplication - Step by Step")
     
@@ -278,27 +220,18 @@ def main():
     
     # Add step explanation
     step_container = st.container()
-    vis_container = st.container()
+    table_container = st.container()
     detail_container = st.container()
     next_step_container = st.container()
     
-    # Draw current state
+    # Draw current state using a simpler approach
     highlight_cell = None
-    highlight_k = None
     
     if not st.session_state.algorithm_complete:
         highlight_cell = (st.session_state.current_i, st.session_state.current_j)
-        if st.session_state.step_phase == 'evaluate_k':
-            highlight_k = st.session_state.current_k
     
-    with vis_container:
-        chart = draw_tables_altair(
-            st.session_state.m, 
-            st.session_state.s, 
-            highlight_cell, 
-            highlight_k
-        )
-        st.altair_chart(chart, use_container_width=True)
+    with table_container:
+        display_tables(st.session_state.m, st.session_state.s, highlight_cell)
     
     # Show step details
     with step_container:
