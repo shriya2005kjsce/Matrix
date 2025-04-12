@@ -1,130 +1,192 @@
 import streamlit as st
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+import numpy as np
 import time
 
-def matrix_chain_order_with_visualization(dimensions, placeholder, delay=1):
-    """Computes the optimal order and visualizes the DP table filling."""
+def matrix_chain_multiplication(dimensions):
     n = len(dimensions) - 1
-    m = [[0] * n for _ in range(n)]
-    s = [[0] * n for _ in range(n)]
-
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-    fig.suptitle("Matrix Chain Multiplication DP Table Filling", fontsize=14)
-
-    def draw_tables(current_i=-1, current_j=-1, current_k=-1):
-        axs[0].clear()
-        axs[1].clear()
-
-        # Cost Table (m)
-        axs[0].set_title("Minimum Cost (m)")
-        axs[0].set_xticks(np.arange(n))
-        axs[0].set_yticks(np.arange(n))
-        axs[0].set_xticklabels([f"j={i+1}" for i in range(n)])
-        axs[0].set_yticklabels([f"i={i+1}" for i in range(n)])
-        axs[0].tick_params(axis='both', which='major', labelsize=8)
-        axs[0].grid(True, linestyle='--', alpha=0.6)
-        im_m = axs[0].imshow(m, cmap='viridis', vmin=0)
-        cbar_m = fig.colorbar(im_m, ax=axs[0], shrink=0.7)
-        cbar_m.ax.tick_params(labelsize=8)
-        for i_idx in range(n):
-            for j_idx in range(n):
-                if j_idx >= i_idx:
-                    text_color = 'white' if m[i_idx][j_idx] > np.max(m) / 2 else 'black' if np.max(m) > 0 else 'black'
-                    axs[0].text(j_idx, i_idx, f"{m[i_idx][j_idx] if m[i_idx][j_idx] != float('inf') else '∞'}",
-                               ha='center', va='center', color=text_color, fontsize=8)
-                else:
-                    axs[0].text(j_idx, i_idx, "-", ha='center', va='center', color='gray', fontsize=8)
-            if current_i != -1 and current_j != -1:
-                rect = patches.Rectangle((current_j - 0.5, current_i - 0.5), 1, 1, linewidth=2, edgecolor='red', facecolor='none')
-                axs[0].add_patch(rect)
-            if current_i != -1 and current_k != -1 and current_k >= current_i:
-                rect_k_left = patches.Rectangle((current_k - 0.5, current_i - 0.5), 1, 1, linewidth=1, edgecolor='blue', facecolor='none', linestyle='--')
-                axs[0].add_patch(rect_k_left)
-            if current_k + 1 != -1 and current_j != -1 and current_j >= current_k + 1:
-                rect_k_right = patches.Rectangle((current_j - 0.5, current_k + 1 - 0.5), 1, 1, linewidth=1, edgecolor='green', facecolor='none', linestyle='--')
-                axs[0].add_patch(rect_k_right)
-
-        # Split Table (s)
-        axs[1].set_title("Optimal Split (k)")
-        axs[1].set_xticks(np.arange(n))
-        axs[1].set_yticks(np.arange(n))
-        axs[1].set_xticklabels([f"j={i+1}" for i in range(n)])
-        axs[1].set_yticklabels([f"i={i+1}" for i in range(n)])
-        axs[1].tick_params(axis='both', which='major', labelsize=8)
-        axs[1].grid(True, linestyle='--', alpha=0.6)
-        im_s = axs[1].imshow(s, cmap='plasma', vmin=-1, vmax=n - 1)
-        cbar_s = fig.colorbar(im_s, ax=axs[1], shrink=0.7, ticks=np.arange(-1, n))
-        cbar_s.ax.tick_params(labelsize=8)
-        for i_idx in range(n):
-            for j_idx in range(n):
-                if j_idx >= i_idx:
-                    axs[1].text(j_idx, i_idx, f"{s[i_idx][j_idx] + 1 if s[i_idx][j_idx] > 0 else '-'}",
-                               ha='center', va='center', color='white', fontsize=8)
-                else:
-                    axs[1].text(j_idx, i_idx, "-", ha='center', va='center', color='gray', fontsize=8)
-            if current_i != -1 and current_j != -1:
-                rect_s = patches.Rectangle((current_j - 0.5, current_i - 0.5), 1, 1, linewidth=2, edgecolor='red', facecolor='none')
-                axs[1].add_patch(rect_s)
-
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to fit title
-        placeholder.pyplot(fig)
-        time.sleep(delay)
-
+    m = [[0 for _ in range(n)] for _ in range(n)]
+    s = [[0 for _ in range(n)] for _ in range(n)]
+    
     # Fill DP tables
-    for length in range(2, n + 1):
-        for i in range(n - length + 1):
-            j = i + length - 1
+    for l in range(1, n):
+        for i in range(n - l):
+            j = i + l
             m[i][j] = float('inf')
             for k in range(i, j):
-                cost = m[i][k] + m[k + 1][j] + dimensions[i] * dimensions[k + 1] * dimensions[j + 1]
+                cost = m[i][k] + m[k+1][j] + dimensions[i] * dimensions[k+1] * dimensions[j+1]
                 if cost < m[i][j]:
                     m[i][j] = cost
                     s[i][j] = k
-                draw_tables(i, j, k)
-    draw_tables() # Final draw
-
-    plt.close(fig)
+    
     return m, s
 
 def print_optimal_parenthesization(s, i, j):
-    """Recursively prints the optimal parenthesization."""
     if i == j:
         return f"A{i+1}"
     else:
-        k = s[i][j]
-        return f"({print_optimal_parenthesization(s, i, k)} × {print_optimal_parenthesization(s, k + 1, j)})"
+        return f"({print_optimal_parenthesization(s, i, s[i][j])} × {print_optimal_parenthesization(s, s[i][j]+1, j)})"
+
+def draw_tables(m, s, step_info=None, highlight_cell=None):
+    n = len(m)
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle("Matrix Chain Multiplication DP Table Filling", fontsize=16)
+    
+    # Draw m table
+    axs[0].set_title("Cost Table (m)")
+    axs[0].imshow(m, cmap='Blues', vmin=0)
+    
+    # Draw s table
+    axs[1].set_title("Split Table (s)")
+    axs[1].imshow(s, cmap='Oranges', vmin=0)
+    
+    # Add text and coordinates
+    for i in range(n):
+        for j in range(n):
+            if j >= i:
+                # Highlight the currently processed cell
+                if highlight_cell and highlight_cell == (i, j):
+                    axs[0].add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1, fill=False, edgecolor='red', lw=2))
+                    axs[1].add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1, fill=False, edgecolor='red', lw=2))
+                
+                # Add text values
+                axs[0].text(j, i, f"{m[i][j] if m[i][j] != float('inf') else '∞'}", 
+                            ha='center', va='center', fontsize=10,
+                            color='black' if m[i][j] < 1000 else 'white')
+                axs[1].text(j, i, f"{s[i][j]}", ha='center', va='center', fontsize=10)
+    
+    axs[0].set_xticks(np.arange(n))
+    axs[0].set_yticks(np.arange(n))
+    axs[1].set_xticks(np.arange(n))
+    axs[1].set_yticks(np.arange(n))
+    
+    # Add step information if provided
+    if step_info:
+        plt.figtext(0.5, 0.01, step_info, ha="center", fontsize=12, bbox={"facecolor":"orange", "alpha":0.2, "pad":5})
+    
+    return fig
 
 def main():
-    st.title("Visual Matrix Chain Multiplication")
-    st.subheader("Observe the dynamic programming table filling process.")
-
-    dimensions_input = st.text_input("Enter matrix dimensions (comma-separated, e.g., 10,20,30,40):", "5,4,6,2,7")
-    dimensions_str_list = dimensions_input.split(',')
+    st.title("Matrix Chain Multiplication Visualization")
+    
+    st.write("""
+    This app visualizes the dynamic programming algorithm for Matrix Chain Multiplication.
+    Enter the dimensions of the matrices and adjust the animation speed to see how the algorithm works.
+    """)
+    
+    # Input for matrix dimensions
+    st.subheader("Enter Matrix Dimensions")
+    
+    default_dims = "5,4,6,2,7"
+    dims_input = st.text_input(
+        "Enter dimensions separated by commas (e.g., '5,4,6,2,7' for matrices A1(5×4), A2(4×6), A3(6×2), A4(2×7))",
+        value=default_dims
+    )
+    
     try:
-        dimensions = [int(d.strip()) for d in dimensions_str_list]
+        dimensions = [int(x.strip()) for x in dims_input.split(",")]
         if len(dimensions) < 2:
-            st.error("Please enter at least two dimensions.")
+            st.error("Please enter at least 2 dimensions (for 1 matrix).")
             return
     except ValueError:
-        st.error("Invalid input. Please enter comma-separated integers.")
+        st.error("Please enter valid integer dimensions.")
         return
-
-    visualization_placeholder = st.empty()
-
-    if st.button("Visualize Calculation"):
-        with visualization_placeholder:
-            m, s = matrix_chain_order_with_visualization(dimensions, st.empty(), delay=0.5) # Adjust delay as needed
-
-            n_matrices = len(dimensions) - 1
-            if n_matrices > 0:
-                st.subheader("Optimal Results:")
-                st.markdown(f"**Minimum number of scalar multiplications:** {m[0][n_matrices - 1]}")
-                st.markdown(f"**Optimal parenthesization:** {print_optimal_parenthesization(s, 0, n_matrices - 1)}")
-            else:
-                st.info("Enter at least two dimensions to see the visualization.")
+    
+    # Animation speed
+    animation_speed = st.slider("Animation Speed", min_value=0.1, max_value=3.0, value=1.0, step=0.1)
+    delay = 1 / animation_speed
+    
+    # Display matrix information
+    st.subheader("Matrices")
+    matrix_info = ""
+    for i in range(len(dimensions) - 1):
+        matrix_info += f"A{i+1}: {dimensions[i]}×{dimensions[i+1]}  "
+    st.write(matrix_info)
+    
+    # Run button
+    if st.button("Run Algorithm"):
+        n = len(dimensions) - 1
+        
+        # Initialize tables
+        m = [[0 for _ in range(n)] for _ in range(n)]
+        s = [[0 for _ in range(n)] for _ in range(n)]
+        
+        # Create a placeholder for the visualization
+        vis_placeholder = st.empty()
+        info_placeholder = st.empty()
+        
+        # Show initial state
+        fig = draw_tables(m, s, "Initial state: diagonal elements are 0")
+        vis_placeholder.pyplot(fig)
+        plt.close(fig)
+        
+        # Fill DP tables with visualization
+        total_iterations = sum(range(1, n))
+        current_iteration = 0
+        
+        progress_bar = st.progress(0)
+        
+        for l in range(1, n):
+            for i in range(n - l):
+                j = i + l
+                m[i][j] = float('inf')
+                
+                step_info = f"Computing m[{i}][{j}] for chain length {l+1}"
+                fig = draw_tables(m, s, step_info, highlight_cell=(i, j))
+                vis_placeholder.pyplot(fig)
+                plt.close(fig)
+                time.sleep(delay)
+                
+                best_k = -1
+                best_cost = float('inf')
+                
+                for k in range(i, j):
+                    cost = m[i][k] + m[k+1][j] + dimensions[i] * dimensions[k+1] * dimensions[j+1]
+                    
+                    k_info = f"Testing split at k={k}: m[{i}][{k}] + m[{k+1}][{j}] + {dimensions[i]}×{dimensions[k+1]}×{dimensions[j+1]} = {cost}"
+                    info_placeholder.info(k_info)
+                    time.sleep(delay/2)
+                    
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_k = k
+                
+                m[i][j] = best_cost
+                s[i][j] = best_k
+                
+                result_info = f"Best split at k={best_k} with cost {best_cost}"
+                info_placeholder.success(result_info)
+                
+                fig = draw_tables(m, s, f"Updated m[{i}][{j}] = {best_cost}, s[{i}][{j}] = {best_k}", highlight_cell=(i, j))
+                vis_placeholder.pyplot(fig)
+                plt.close(fig)
+                time.sleep(delay)
+                
+                current_iteration += 1
+                progress_bar.progress(current_iteration / total_iterations)
+        
+        # Show final results
+        st.subheader("Results")
+        st.write(f"Minimum number of scalar multiplications: {m[0][n-1]}")
+        optimal_parenthesization = print_optimal_parenthesization(s, 0, n-1)
+        st.write(f"Optimal parenthesization: {optimal_parenthesization}")
+        
+        # Final visualization
+        fig = draw_tables(m, s, "Final DP tables")
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        # Explanation
+        st.subheader("How It Works")
+        st.write("""
+        The algorithm uses dynamic programming to find the optimal way to multiply a sequence of matrices.
+        
+        - The m[i][j] table stores the minimum cost (number of scalar multiplications) to compute the product of matrices A_i through A_j.
+        - The s[i][j] table stores the optimal split point k where the chain is divided into two sub-chains: A_i...A_k and A_(k+1)...A_j.
+        
+        The algorithm fills these tables diagonally, starting with the main diagonal (chain length 1) and working outward.
+        For each cell m[i][j], it tries all possible split points k between i and j, and picks the one that minimizes the cost.
+        """)
 
 if __name__ == "__main__":
     main()
