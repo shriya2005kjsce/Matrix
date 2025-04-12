@@ -132,45 +132,76 @@ def handle_next_step():
                 st.session_state.algorithm_complete = True
                 st.session_state.step_phase = 'complete'
 
-def display_tables(m, s, highlight_cell=None):
-    """Display the m and s tables in a simpler format"""
+def display_matrix_tables(m, s, highlight_cell=None):
+    """Display the m and s tables as styled matrix boxes"""
     n = len(m)
     
+    # Function to style a cell
+    def get_cell_style(is_highlight=False, is_current=False):
+        if is_current:
+            return "background-color: #ffcccc; padding: 10px; text-align: center; font-weight: bold; border: 1px solid #ddd;"
+        elif is_highlight:
+            return "background-color: #e6f7ff; padding: 10px; text-align: center; font-weight: bold; border: 1px solid #ddd;"
+        else:
+            return "background-color: #f0f8ff; padding: 10px; text-align: center; border: 1px solid #ddd;"
+    
+    # Display m table
     st.write("### Cost Table (m)")
-    m_data = []
+    
+    # Create a table with HTML for better styling
+    html_table = '<div style="overflow-x: auto;"><table style="border-collapse: collapse; width: 100%; border: 2px solid #ddd;">'
+    
+    # Headers
+    html_table += '<tr><th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;"></th>'
+    for j in range(n):
+        html_table += f'<th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">j={j}</th>'
+    html_table += '</tr>'
+    
+    # Data rows
     for i in range(n):
-        row = []
+        html_table += f'<tr><th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">i={i}</th>'
         for j in range(n):
-            if j >= i:
-                value = m[i][j]
-                if value == float('inf'):
-                    row.append("∞")
-                else:
-                    row.append(str(value))
+            is_current = highlight_cell and highlight_cell == (i, j)
+            is_highlight = j >= i and not is_current
+            
+            value = m[i][j] if j >= i else ""
+            if value == float('inf'):
+                value_str = "∞"
             else:
-                row.append("")
-        m_data.append(row)
+                value_str = str(value)
+                
+            html_table += f'<td style="{get_cell_style(is_highlight, is_current)}">{value_str}</td>'
+        html_table += '</tr>'
     
-    m_df = pd.DataFrame(m_data, 
-                       columns=[f"j={j}" for j in range(n)],
-                       index=[f"i={i}" for i in range(n)])
-    st.dataframe(m_df)
+    html_table += '</table></div>'
+    st.markdown(html_table, unsafe_allow_html=True)
     
+    # Display s table
     st.write("### Split Table (s)")
-    s_data = []
-    for i in range(n):
-        row = []
-        for j in range(n):
-            if j >= i:
-                row.append(str(s[i][j]))
-            else:
-                row.append("")
-        s_data.append(row)
     
-    s_df = pd.DataFrame(s_data, 
-                       columns=[f"j={j}" for j in range(n)],
-                       index=[f"i={i}" for i in range(n)])
-    st.dataframe(s_df)
+    # Create a table with HTML for better styling
+    html_table = '<div style="overflow-x: auto;"><table style="border-collapse: collapse; width: 100%; border: 2px solid #ddd;">'
+    
+    # Headers
+    html_table += '<tr><th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;"></th>'
+    for j in range(n):
+        html_table += f'<th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">j={j}</th>'
+    html_table += '</tr>'
+    
+    # Data rows
+    for i in range(n):
+        html_table += f'<tr><th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">i={i}</th>'
+        for j in range(n):
+            is_current = highlight_cell and highlight_cell == (i, j)
+            is_highlight = j >= i and not is_current
+            
+            value = s[i][j] if j >= i else ""
+                
+            html_table += f'<td style="{get_cell_style(is_highlight, is_current)}">{value}</td>'
+        html_table += '</tr>'
+    
+    html_table += '</table></div>'
+    st.markdown(html_table, unsafe_allow_html=True)
 
 def main():
     st.title("Matrix Chain Multiplication - Step by Step")
@@ -182,11 +213,11 @@ def main():
     st.sidebar.header("Setup")
     
     # Input for matrix dimensions
-    default_dims = "5,4,6,2,7"
+    default_dims = "5,2,4,7"
     dims_input = st.sidebar.text_input(
         "Matrix Dimensions",
         value=default_dims,
-        help="Enter dimensions separated by commas (e.g., '5,4,6,2,7' for matrices A1(5×4), A2(4×6), A3(6×2), A4(2×7))"
+        help="Enter dimensions separated by commas (e.g., '5,2,4,7' for matrices A1(5×2), A2(2×4), A3(4×7))"
     )
     
     try:
@@ -200,6 +231,10 @@ def main():
         st.error("Please enter valid integer dimensions.")
         return
     
+    # Initialize or reset button
+    if not st.session_state.initialized or st.sidebar.button("Reset Algorithm"):
+        reset_algorithm()
+    
     # Display matrix information
     st.subheader("Input Matrices")
     matrix_info = []
@@ -211,32 +246,16 @@ def main():
     for i, matrix in enumerate(matrix_info):
         cols[i % len(cols)].write(matrix)
     
-    # Initialize or reset button
-    if not st.session_state.initialized or st.sidebar.button("Reset Algorithm"):
-        reset_algorithm()
-    
     # Main visualization area
     st.subheader("Dynamic Programming Tables")
     
     # Add step explanation
     step_container = st.container()
-    table_container = st.container()
-    detail_container = st.container()
-    next_step_container = st.container()
-    
-    # Draw current state using a simpler approach
-    highlight_cell = None
-    
-    if not st.session_state.algorithm_complete:
-        highlight_cell = (st.session_state.current_i, st.session_state.current_j)
-    
-    with table_container:
-        display_tables(st.session_state.m, st.session_state.s, highlight_cell)
     
     # Show step details
     with step_container:
         if st.session_state.algorithm_complete:
-            st.success("Algorithm complete! Final tables shown above.")
+            st.success("Algorithm complete! Final tables shown below.")
         else:
             phase = st.session_state.step_phase
             i = st.session_state.current_i
@@ -253,7 +272,15 @@ def main():
             elif phase == 'next_cell':
                 st.info("Moving to next cell")
     
+    # Draw current state using styled tables
+    highlight_cell = None
+    if not st.session_state.algorithm_complete:
+        highlight_cell = (st.session_state.current_i, st.session_state.current_j)
+    
+    display_matrix_tables(st.session_state.m, st.session_state.s, highlight_cell)
+    
     # Show calculation details
+    detail_container = st.container()
     with detail_container:
         if st.session_state.step_phase == 'evaluate_k':
             i, j, k = st.session_state.current_i, st.session_state.current_j, st.session_state.current_k
@@ -284,6 +311,7 @@ def main():
             st.write(f"Optimal parenthesization: {parenthesization}")
     
     # Next step button
+    next_step_container = st.container()
     with next_step_container:
         if st.session_state.algorithm_complete:
             if st.button("Restart Algorithm"):
