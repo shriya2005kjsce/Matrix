@@ -1,126 +1,130 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import time
 
-def matrix_chain_order(dims):
-    """Computes the optimal order of matrix multiplication and the minimum cost."""
-    n = len(dims) - 1
+def matrix_chain_order_with_visualization(dimensions, placeholder, delay=1):
+    """Computes the optimal order and visualizes the DP table filling."""
+    n = len(dimensions) - 1
     m = [[0] * n for _ in range(n)]
     s = [[0] * n for _ in range(n)]
 
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+    fig.suptitle("Matrix Chain Multiplication DP Table Filling", fontsize=14)
+
+    def draw_tables(current_i=-1, current_j=-1, current_k=-1):
+        axs[0].clear()
+        axs[1].clear()
+
+        # Cost Table (m)
+        axs[0].set_title("Minimum Cost (m)")
+        axs[0].set_xticks(np.arange(n))
+        axs[0].set_yticks(np.arange(n))
+        axs[0].set_xticklabels([f"j={i+1}" for i in range(n)])
+        axs[0].set_yticklabels([f"i={i+1}" for i in range(n)])
+        axs[0].tick_params(axis='both', which='major', labelsize=8)
+        axs[0].grid(True, linestyle='--', alpha=0.6)
+        im_m = axs[0].imshow(m, cmap='viridis', vmin=0)
+        cbar_m = fig.colorbar(im_m, ax=axs[0], shrink=0.7)
+        cbar_m.ax.tick_params(labelsize=8)
+        for i_idx in range(n):
+            for j_idx in range(n):
+                if j_idx >= i_idx:
+                    text_color = 'white' if m[i_idx][j_idx] > np.max(m) / 2 else 'black' if np.max(m) > 0 else 'black'
+                    axs[0].text(j_idx, i_idx, f"{m[i_idx][j_idx] if m[i_idx][j_idx] != float('inf') else '∞'}",
+                               ha='center', va='center', color=text_color, fontsize=8)
+                else:
+                    axs[0].text(j_idx, i_idx, "-", ha='center', va='center', color='gray', fontsize=8)
+            if current_i != -1 and current_j != -1:
+                rect = patches.Rectangle((current_j - 0.5, current_i - 0.5), 1, 1, linewidth=2, edgecolor='red', facecolor='none')
+                axs[0].add_patch(rect)
+            if current_i != -1 and current_k != -1 and current_k >= current_i:
+                rect_k_left = patches.Rectangle((current_k - 0.5, current_i - 0.5), 1, 1, linewidth=1, edgecolor='blue', facecolor='none', linestyle='--')
+                axs[0].add_patch(rect_k_left)
+            if current_k + 1 != -1 and current_j != -1 and current_j >= current_k + 1:
+                rect_k_right = patches.Rectangle((current_j - 0.5, current_k + 1 - 0.5), 1, 1, linewidth=1, edgecolor='green', facecolor='none', linestyle='--')
+                axs[0].add_patch(rect_k_right)
+
+        # Split Table (s)
+        axs[1].set_title("Optimal Split (k)")
+        axs[1].set_xticks(np.arange(n))
+        axs[1].set_yticks(np.arange(n))
+        axs[1].set_xticklabels([f"j={i+1}" for i in range(n)])
+        axs[1].set_yticklabels([f"i={i+1}" for i in range(n)])
+        axs[1].tick_params(axis='both', which='major', labelsize=8)
+        axs[1].grid(True, linestyle='--', alpha=0.6)
+        im_s = axs[1].imshow(s, cmap='plasma', vmin=-1, vmax=n - 1)
+        cbar_s = fig.colorbar(im_s, ax=axs[1], shrink=0.7, ticks=np.arange(-1, n))
+        cbar_s.ax.tick_params(labelsize=8)
+        for i_idx in range(n):
+            for j_idx in range(n):
+                if j_idx >= i_idx:
+                    axs[1].text(j_idx, i_idx, f"{s[i_idx][j_idx] + 1 if s[i_idx][j_idx] > 0 else '-'}",
+                               ha='center', va='center', color='white', fontsize=8)
+                else:
+                    axs[1].text(j_idx, i_idx, "-", ha='center', va='center', color='gray', fontsize=8)
+            if current_i != -1 and current_j != -1:
+                rect_s = patches.Rectangle((current_j - 0.5, current_i - 0.5), 1, 1, linewidth=2, edgecolor='red', facecolor='none')
+                axs[1].add_patch(rect_s)
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to fit title
+        placeholder.pyplot(fig)
+        time.sleep(delay)
+
+    # Fill DP tables
     for length in range(2, n + 1):
         for i in range(n - length + 1):
             j = i + length - 1
             m[i][j] = float('inf')
             for k in range(i, j):
-                cost = m[i][k] + m[k + 1][j] + dims[i] * dims[k + 1] * dims[j + 1]
+                cost = m[i][k] + m[k + 1][j] + dimensions[i] * dimensions[k + 1] * dimensions[j + 1]
                 if cost < m[i][j]:
                     m[i][j] = cost
                     s[i][j] = k
+                draw_tables(i, j, k)
+    draw_tables() # Final draw
 
+    plt.close(fig)
     return m, s
 
-def print_optimal_parens(s, i, j):
+def print_optimal_parenthesization(s, i, j):
     """Recursively prints the optimal parenthesization."""
     if i == j:
         return f"A{i+1}"
     else:
         k = s[i][j]
-        return f"({print_optimal_parens(s, i, k)} x {print_optimal_parens(s, k + 1, j)})"
-
-def multiply_matrices(matrices, order):
-    """Multiplies the matrices according to the given parenthesization order."""
-    def get_matrix(label):
-        index = int(label[1:]) - 1
-        return matrices[index]
-
-    def perform_multiplication(op_str):
-        if 'x' not in op_str:
-            return get_matrix(op_str)
-
-        # Find the outermost multiplication
-        balance = 0
-        split_index = -1
-        for i, char in enumerate(op_str):
-            if char == '(':
-                balance += 1
-            elif char == ')':
-                balance -= 1
-            elif char == 'x' and balance == 1:
-                split_index = i
-                break
-
-        left_op = op_str[1:split_index]
-        right_op = op_str[split_index + 1:-1]
-
-        left_matrix = perform_multiplication(left_op)
-        right_matrix = perform_multiplication(right_op)
-        return np.dot(left_matrix, right_matrix)
-
-    return perform_multiplication(order)
+        return f"({print_optimal_parenthesization(s, i, k)} × {print_optimal_parenthesization(s, k + 1, j)})"
 
 def main():
-    st.title("Matrix Chain Multiplication Simulation")
-    st.subheader("Visualize the optimal order and cost of multiplying matrices.")
+    st.title("Visual Matrix Chain Multiplication")
+    st.subheader("Observe the dynamic programming table filling process.")
 
-    num_matrices = st.number_input("Number of matrices:", min_value=2, max_value=10, value=3, step=1)
-    dimensions = []
-    matrices = []
+    dimensions_input = st.text_input("Enter matrix dimensions (comma-separated, e.g., 10,20,30,40):", "5,4,6,2,7")
+    dimensions_str_list = dimensions_input.split(',')
+    try:
+        dimensions = [int(d.strip()) for d in dimensions_str_list]
+        if len(dimensions) < 2:
+            st.error("Please enter at least two dimensions.")
+            return
+    except ValueError:
+        st.error("Invalid input. Please enter comma-separated integers.")
+        return
 
-    st.subheader("Enter Matrix Dimensions:")
-    for i in range(num_matrices):
-        cols = 0
-        if dimensions:
-            cols = dimensions[-1][1]
-        rows = st.number_input(f"Matrix A{i+1} - Rows:", min_value=1, value=np.random.randint(2, 6), key=f"rows_{i}")
-        if i < num_matrices - 1:
-            cols = st.number_input(f"Matrix A{i+1} - Columns (must match next matrix's rows):", min_value=1, value=np.random.randint(2, 6), key=f"cols_{i}")
-        elif dimensions:
-            cols = dimensions[-1][1]
-        else:
-            cols = st.number_input(f"Matrix A{i+1} - Columns:", min_value=1, value=np.random.randint(2, 6), key=f"cols_{i}")
+    visualization_placeholder = st.empty()
 
-        dimensions.append((rows, cols))
+    if st.button("Visualize Calculation"):
+        with visualization_placeholder:
+            m, s = matrix_chain_order_with_visualization(dimensions, st.empty(), delay=0.5) # Adjust delay as needed
 
-        if st.checkbox(f"Show/Edit Matrix A{i+1}", key=f"show_matrix_{i}"):
-            matrix_data = np.zeros((rows, cols))
-            for r in range(rows):
-                cols_input = st.text_input(f"Row {r+1} (comma-separated values):", key=f"matrix_{i}_row_{r}", value=", ".join(map(str, np.random.randint(1, 10, cols))))
-                try:
-                    matrix_data[r] = np.array([int(x.strip()) for x in cols_input.split(',')])
-                except ValueError:
-                    st.error("Please enter valid integer values separated by commas.")
-                    return
-            matrices.append(matrix_data)
-        else:
-            matrices.append(np.random.randint(1, 10, size=(rows, cols)))
-
-    if len(dimensions) > 1:
-        dims_for_algo = [dimensions[0][0]] + [d[1] for d in dimensions]
-
-        if st.button("Calculate Optimal Order"):
-            m, s = matrix_chain_order(dims_for_algo)
-            optimal_order = print_optimal_parens(s, 0, len(dimensions) - 1)
-            min_cost = m[0][len(dimensions) - 1]
-
-            st.subheader("Optimal Multiplication Order:")
-            st.markdown(f"**{optimal_order}**")
-
-            st.subheader("Minimum Cost (Number of scalar multiplications):")
-            st.markdown(f"**{min_cost}**")
-
-            if st.checkbox("Simulate Multiplication with Optimal Order"):
-                try:
-                    result_matrix = multiply_matrices(matrices, optimal_order)
-                    st.subheader("Resultant Matrix:")
-                    st.dataframe(pd.DataFrame(result_matrix))
-                except ValueError as e:
-                    st.error(f"Error during matrix multiplication: {e}")
-                except Exception as e:
-                    st.error(f"An unexpected error occurred during multiplication: {e}")
-
-    elif num_matrices == 1:
-        st.info("Enter at least two matrices to find the optimal multiplication order.")
+            n_matrices = len(dimensions) - 1
+            if n_matrices > 0:
+                st.subheader("Optimal Results:")
+                st.markdown(f"**Minimum number of scalar multiplications:** {m[0][n_matrices - 1]}")
+                st.markdown(f"**Optimal parenthesization:** {print_optimal_parenthesization(s, 0, n_matrices - 1)}")
+            else:
+                st.info("Enter at least two dimensions to see the visualization.")
 
 if __name__ == "__main__":
     main()
