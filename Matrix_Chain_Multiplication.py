@@ -14,7 +14,7 @@ def initialize_session_state():
     if 'initialized' not in st.session_state:
         st.session_state.initialized = False
     if 'dimensions' not in st.session_state:
-        st.session_state.dimensions = [5, 4, 6, 2, 7]
+        st.session_state.dimensions = [5, 2, 4, 7]
     if 'm' not in st.session_state:
         st.session_state.m = None
     if 's' not in st.session_state:
@@ -37,6 +37,8 @@ def initialize_session_state():
         st.session_state.k_costs = []
     if 'algorithm_complete' not in st.session_state:
         st.session_state.algorithm_complete = False
+    if 'show_final_result' not in st.session_state:
+        st.session_state.show_final_result = False
 
 def reset_algorithm():
     """Reset the algorithm to start over"""
@@ -56,6 +58,32 @@ def reset_algorithm():
     st.session_state.step_phase = 'start'
     st.session_state.k_costs = []
     st.session_state.algorithm_complete = False
+    st.session_state.show_final_result = False
+
+def run_full_algorithm():
+    """Run the entire algorithm to completion"""
+    dimensions = st.session_state.dimensions
+    n = len(dimensions) - 1
+    
+    # Initialize tables
+    m = [[0 for _ in range(n)] for _ in range(n)]
+    s = [[0 for _ in range(n)] for _ in range(n)]
+    
+    # For chains of length 2 to n
+    for l in range(1, n):
+        for i in range(n - l):
+            j = i + l
+            m[i][j] = float('inf')
+            for k in range(i, j):
+                cost = m[i][k] + m[k+1][j] + dimensions[i] * dimensions[k+1] * dimensions[j+1]
+                if cost < m[i][j]:
+                    m[i][j] = cost
+                    s[i][j] = k
+    
+    st.session_state.m = m
+    st.session_state.s = s
+    st.session_state.algorithm_complete = True
+    st.session_state.show_final_result = True
 
 def handle_next_step():
     """Process the next step in the algorithm"""
@@ -130,6 +158,7 @@ def handle_next_step():
             else:
                 # Algorithm complete
                 st.session_state.algorithm_complete = True
+                st.session_state.show_final_result = True
                 st.session_state.step_phase = 'complete'
 
 def display_matrix_tables(m, s, highlight_cell=None):
@@ -141,7 +170,7 @@ def display_matrix_tables(m, s, highlight_cell=None):
         if is_current:
             return "background-color: #ffcccc; padding: 10px; text-align: center; font-weight: bold; border: 1px solid #ddd;"
         elif is_highlight:
-            return "background-color: #e6f7ff; padding: 10px; text-align: center; font-weight: bold; border: 1px solid #ddd;"
+            return "background-color: #f0f8ff; padding: 10px; text-align: center; font-weight: bold; border: 1px solid #ddd;"
         else:
             return "background-color: #f0f8ff; padding: 10px; text-align: center; border: 1px solid #ddd;"
     
@@ -203,6 +232,23 @@ def display_matrix_tables(m, s, highlight_cell=None):
     html_table += '</table></div>'
     st.markdown(html_table, unsafe_allow_html=True)
 
+def display_final_result(m, s, dimensions):
+    """Display the final result with optimal parenthesization"""
+    i, j = 0, len(dimensions) - 2
+    
+    st.write("## Final Result")
+    st.write(f"**Minimum scalar multiplications:** {m[i][j]}")
+    
+    parenthesization = print_optimal_parenthesization(s, i, j)
+    
+    # Display parenthesization with larger font
+    st.markdown(f"""
+    <div style="background-color: #e6f7ff; padding: 20px; border-radius: 5px; margin-top: 20px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0;">Optimal Parenthesization:</h3>
+        <p style="font-size: 20px; font-weight: bold; text-align: center;">{parenthesization}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
 def main():
     st.title("Matrix Chain Multiplication - Step by Step")
     
@@ -234,6 +280,10 @@ def main():
     # Initialize or reset button
     if not st.session_state.initialized or st.sidebar.button("Reset Algorithm"):
         reset_algorithm()
+    
+    # Run Full Algorithm button
+    if st.sidebar.button("Run Full Algorithm"):
+        run_full_algorithm()
     
     # Display matrix information
     st.subheader("Input Matrices")
@@ -302,13 +352,10 @@ def main():
                         st.write(f"k={k}: {cost} ← **BEST**")
                     else:
                         st.write(f"k={k}: {cost}")
-        
-        elif st.session_state.algorithm_complete:
-            i, j = 0, len(st.session_state.dimensions) - 2
-            st.write(f"**Final Result:**")
-            st.write(f"Minimum multiplications: {st.session_state.m[i][j]}")
-            parenthesization = print_optimal_parenthesization(st.session_state.s, i, j)
-            st.write(f"Optimal parenthesization: {parenthesization}")
+    
+    # Display final result if algorithm is complete
+    if st.session_state.show_final_result:
+        display_final_result(st.session_state.m, st.session_state.s, st.session_state.dimensions)
     
     # Next step button
     next_step_container = st.container()
