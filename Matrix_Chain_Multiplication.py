@@ -1,44 +1,8 @@
 import streamlit as st
 import numpy as np
-import time
-
-# Add requirements file for deployment
-# Save this in a file named "requirements.txt" in your repository
-# requirements.txt:
-# streamlit
-# numpy
-# matplotlib
-# altair
-
-# Add import for altair as a backup visualization option
-import altair as alt
 import pandas as pd
-
-# Import matplotlib safely with fallback option
-try:
-    import matplotlib.pyplot as plt
-    matplotlib_available = True
-except ImportError:
-    matplotlib_available = False
-    st.warning("matplotlib is not installed. Using Altair for visualizations instead.")
-
-def matrix_chain_multiplication(dimensions):
-    n = len(dimensions) - 1
-    m = [[0 for _ in range(n)] for _ in range(n)]
-    s = [[0 for _ in range(n)] for _ in range(n)]
-    
-    # Fill DP tables
-    for l in range(1, n):
-        for i in range(n - l):
-            j = i + l
-            m[i][j] = float('inf')
-            for k in range(i, j):
-                cost = m[i][k] + m[k+1][j] + dimensions[i] * dimensions[k+1] * dimensions[j+1]
-                if cost < m[i][j]:
-                    m[i][j] = cost
-                    s[i][j] = k
-    
-    return m, s
+import altair as alt
+import time
 
 def print_optimal_parenthesization(s, i, j):
     if i == j:
@@ -46,7 +10,7 @@ def print_optimal_parenthesization(s, i, j):
     else:
         return f"({print_optimal_parenthesization(s, i, s[i][j])} × {print_optimal_parenthesization(s, s[i][j]+1, j)})"
 
-def create_heatmap_data(matrix, highlight_cell=None):
+def create_heatmap_data(matrix, highlight_cell=None, highlight_k=None):
     """Create data for Altair heatmap."""
     n = len(matrix)
     data = []
@@ -60,14 +24,19 @@ def create_heatmap_data(matrix, highlight_cell=None):
                 else:
                     value_str = str(value)
                 
-                highlighted = (highlight_cell and highlight_cell == (i, j))
+                # Determine highlight type
+                highlight = "none"
+                if highlight_cell and highlight_cell == (i, j):
+                    highlight = "current"
+                elif highlight_k and ((i, highlight_k) == (highlight_cell[0], j) or (highlight_k+1, j) == (i, highlight_cell[1])):
+                    highlight = "k_related"
                 
                 data.append({
                     'row': i,
                     'col': j,
                     'value': value if value != float('inf') else 0,
                     'label': value_str,
-                    'highlighted': highlighted
+                    'highlight': highlight
                 })
     
     return pd.DataFrame(data)
@@ -98,17 +67,25 @@ def create_heatmap_chart(df, title, color_scheme='blues'):
         )
     )
     
-    # Add red border for highlighted cell
-    highlight = base.mark_rect(
+    # Add borders for highlighted cells
+    highlight_current = base.mark_rect(
         stroke='red',
         strokeWidth=2,
         fill=None
     ).transform_filter(
-        alt.datum.highlighted == True
+        alt.datum.highlight == 'current'
+    )
+    
+    highlight_k = base.mark_rect(
+        stroke='orange',
+        strokeWidth=1,
+        fill=None
+    ).transform_filter(
+        alt.datum.highlight == 'k_related'
     )
     
     # Combine layers
-    chart = (heatmap + text + highlight).properties(
+    chart = (heatmap + text + highlight_current + highlight_k).properties(
         title=title,
         width=300,
         height=300
@@ -116,9 +93,9 @@ def create_heatmap_chart(df, title, color_scheme='blues'):
     
     return chart
 
-def draw_tables_altair(m, s, highlight_cell=None):
+def draw_tables_altair(m, s, highlight_cell=None, highlight_k=None):
     """Create Altair charts for m and s tables."""
-    m_data = create_heatmap_data(m, highlight_cell)
+    m_data = create_heatmap_data(m, highlight_cell, highlight_k)
     s_data = create_heatmap_data(s, highlight_cell)
     
     m_chart = create_heatmap_chart(m_data, "Cost Table (m)", "blues")
@@ -130,52 +107,137 @@ def draw_tables_altair(m, s, highlight_cell=None):
     
     return combined_chart
 
-def draw_tables_matplotlib(m, s, highlight_cell=None):
-    """Create matplotlib visualization for m and s tables."""
-    if not matplotlib_available:
-        return None
+def initialize_session_state():
+    """Initialize session state variables if they don't exist"""
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = False
+    if 'dimensions' not in st.session_state:
+        st.session_state.dimensions = [5, 4, 6, 2, 7]
+    if 'm' not in st.session_state:
+        st.session_state.m = None
+    if 's' not in st.session_state:
+        st.session_state.s = None
+    if 'current_l' not in st.session_state:
+        st.session_state.current_l = 1
+    if 'current_i' not in st.session_state:
+        st.session_state.current_i = 0
+    if 'current_j' not in st.session_state:
+        st.session_state.current_j = 1
+    if 'current_k' not in st.session_state:
+        st.session_state.current_k = 0
+    if 'best_k' not in st.session_state:
+        st.session_state.best_k = -1
+    if 'best_cost' not in st.session_state:
+        st.session_state.best_cost = float('inf')
+    if 'step_phase' not in st.session_state:
+        st.session_state.step_phase = 'start'  # start, evaluate_k, update_best, next_cell
+    if 'k_costs' not in st.session_state:
+        st.session_state.k_costs = []
+    if 'algorithm_complete' not in st.session_state:
+        st.session_state.algorithm_complete = False
+
+def reset_algorithm():
+    """Reset the algorithm to start over"""
+    st.session_state.initialized = True
+    dimensions = st.session_state.dimensions
+    n = len(dimensions) - 1
+    
+    st.session_state.m = [[0 for _ in range(n)] for _ in range(n)]
+    st.session_state.s = [[0 for _ in range(n)] for _ in range(n)]
+    
+    st.session_state.current_l = 1
+    st.session_state.current_i = 0
+    st.session_state.current_j = 1
+    st.session_state.current_k = 0
+    st.session_state.best_k = -1
+    st.session_state.best_cost = float('inf')
+    st.session_state.step_phase = 'start'
+    st.session_state.k_costs = []
+    st.session_state.algorithm_complete = False
+
+def handle_next_step():
+    """Process the next step in the algorithm"""
+    if st.session_state.algorithm_complete:
+        return
+    
+    n = len(st.session_state.dimensions) - 1
+    
+    if st.session_state.step_phase == 'start':
+        # Initialize a new cell calculation
+        i = st.session_state.current_i
+        j = st.session_state.current_j
+        st.session_state.m[i][j] = float('inf')
+        st.session_state.current_k = i
+        st.session_state.best_k = -1
+        st.session_state.best_cost = float('inf')
+        st.session_state.k_costs = []
+        st.session_state.step_phase = 'evaluate_k'
+    
+    elif st.session_state.step_phase == 'evaluate_k':
+        # Calculate the cost for current k
+        i = st.session_state.current_i
+        j = st.session_state.current_j
+        k = st.session_state.current_k
+        dimensions = st.session_state.dimensions
         
-    n = len(m)
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
-    fig.suptitle("Matrix Chain Multiplication DP Table Filling", fontsize=16)
+        cost = (st.session_state.m[i][k] + 
+                st.session_state.m[k+1][j] + 
+                dimensions[i] * dimensions[k+1] * dimensions[j+1])
+        
+        st.session_state.k_costs.append((k, cost))
+        
+        if cost < st.session_state.best_cost:
+            st.session_state.best_cost = cost
+            st.session_state.best_k = k
+        
+        # Move to next k or update best
+        if k + 1 < j:
+            st.session_state.current_k += 1
+        else:
+            st.session_state.step_phase = 'update_best'
     
-    # Draw m table
-    axs[0].set_title("Cost Table (m)")
-    axs[0].imshow(m, cmap='Blues', vmin=0)
+    elif st.session_state.step_phase == 'update_best':
+        # Update m and s tables with best values
+        i = st.session_state.current_i
+        j = st.session_state.current_j
+        
+        st.session_state.m[i][j] = st.session_state.best_cost
+        st.session_state.s[i][j] = st.session_state.best_k
+        
+        st.session_state.step_phase = 'next_cell'
     
-    # Draw s table
-    axs[1].set_title("Split Table (s)")
-    axs[1].imshow(s, cmap='Oranges', vmin=0)
-    
-    # Add text and coordinates
-    for i in range(n):
-        for j in range(n):
-            if j >= i:
-                # Highlight the currently processed cell
-                if highlight_cell and highlight_cell == (i, j):
-                    axs[0].add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1, fill=False, edgecolor='red', lw=2))
-                    axs[1].add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1, fill=False, edgecolor='red', lw=2))
-                
-                # Add text values
-                axs[0].text(j, i, f"{m[i][j] if m[i][j] != float('inf') else '∞'}", 
-                            ha='center', va='center', fontsize=10,
-                            color='black' if m[i][j] < 1000 else 'white')
-                axs[1].text(j, i, f"{s[i][j]}", ha='center', va='center', fontsize=10)
-    
-    axs[0].set_xticks(np.arange(n))
-    axs[0].set_yticks(np.arange(n))
-    axs[1].set_xticks(np.arange(n))
-    axs[1].set_yticks(np.arange(n))
-    
-    return fig
+    elif st.session_state.step_phase == 'next_cell':
+        # Move to the next cell or next chain length
+        i = st.session_state.current_i
+        j = st.session_state.current_j
+        l = st.session_state.current_l
+        
+        # Find next i, j position
+        if i + 1 < n - l:
+            # Move to next position in the same diagonal
+            st.session_state.current_i += 1
+            st.session_state.current_j += 1
+            st.session_state.step_phase = 'start'
+        else:
+            # Move to next diagonal (chain length)
+            st.session_state.current_l += 1
+            if st.session_state.current_l < n:
+                st.session_state.current_i = 0
+                st.session_state.current_j = st.session_state.current_l
+                st.session_state.step_phase = 'start'
+            else:
+                # Algorithm complete
+                st.session_state.algorithm_complete = True
+                st.session_state.step_phase = 'complete'
 
 def main():
-    st.title("Matrix Chain Multiplication Visualization")
+    st.title("Matrix Chain Multiplication - Step by Step")
     
-    st.write("This app visualizes the dynamic programming algorithm for Matrix Chain Multiplication.")
+    # Initialize session state
+    initialize_session_state()
     
-    # Sidebar for controls
-    st.sidebar.header("Controls")
+    # Sidebar for setup
+    st.sidebar.header("Setup")
     
     # Input for matrix dimensions
     default_dims = "5,4,6,2,7"
@@ -190,31 +252,14 @@ def main():
         if len(dimensions) < 2:
             st.error("Please enter at least 2 dimensions (for 1 matrix).")
             return
+        
+        st.session_state.dimensions = dimensions
     except ValueError:
         st.error("Please enter valid integer dimensions.")
         return
     
-    # Animation speed
-    animation_speed = st.sidebar.slider("Animation Speed", min_value=0.1, max_value=3.0, value=1.0, step=0.1)
-    delay = 1 / animation_speed
-    
-    # Visualization method
-    viz_method = st.sidebar.radio(
-        "Visualization Method",
-        ["Auto (Recommended)", "Altair", "Matplotlib"],
-        index=0,
-        help="Choose the visualization library. Auto will use Matplotlib if available, otherwise Altair."
-    )
-    
-    if viz_method == "Matplotlib" and not matplotlib_available:
-        st.warning("Matplotlib is not available. Using Altair instead.")
-        viz_method = "Altair"
-    
-    if viz_method == "Auto (Recommended)":
-        viz_method = "Matplotlib" if matplotlib_available else "Altair"
-    
     # Display matrix information
-    st.markdown("### Input Matrices")
+    st.subheader("Input Matrices")
     matrix_info = []
     for i in range(len(dimensions) - 1):
         matrix_info.append(f"A{i+1}: {dimensions[i]}×{dimensions[i+1]}")
@@ -224,131 +269,115 @@ def main():
     for i, matrix in enumerate(matrix_info):
         cols[i % len(cols)].write(matrix)
     
-    # Run button
-    if st.sidebar.button("Run Algorithm"):
-        n = len(dimensions) - 1
-        
-        # Initialize tables
-        m = [[0 for _ in range(n)] for _ in range(n)]
-        s = [[0 for _ in range(n)] for _ in range(n)]
-        
-        # Create containers for different parts of the visualization
-        vis_container = st.container()
-        with vis_container:
-            st.markdown("### Visualization")
-            vis_placeholder = st.empty()
-            progress_bar = st.progress(0)
-            info_col1, info_col2 = st.columns(2)
-            with info_col1:
-                current_step = st.empty()
-            with info_col2:
-                calculation_details = st.empty()
-        
-        # Show initial state
-        with vis_placeholder.container():
-            st.write("Initial state: diagonal elements are 0")
-            if viz_method == "Matplotlib":
-                fig = draw_tables_matplotlib(m, s)
-                st.pyplot(fig)
-                plt.close(fig)
-            else:
-                chart = draw_tables_altair(m, s)
-                st.altair_chart(chart, use_container_width=True)
-        
-        # Fill DP tables with visualization
-        total_iterations = sum(range(1, n))
-        current_iteration = 0
-        
-        for l in range(1, n):
-            for i in range(n - l):
-                j = i + l
-                m[i][j] = float('inf')
-                
-                current_step.write(f"Computing m[{i}][{j}] for chain length {l+1}")
-                
-                with vis_placeholder.container():
-                    if viz_method == "Matplotlib":
-                        fig = draw_tables_matplotlib(m, s, highlight_cell=(i, j))
-                        st.pyplot(fig)
-                        plt.close(fig)
-                    else:
-                        chart = draw_tables_altair(m, s, highlight_cell=(i, j))
-                        st.altair_chart(chart, use_container_width=True)
-                
-                time.sleep(delay)
-                
-                best_k = -1
-                best_cost = float('inf')
-                
-                k_details = []
-                for k in range(i, j):
-                    cost = m[i][k] + m[k+1][j] + dimensions[i] * dimensions[k+1] * dimensions[j+1]
-                    
-                    k_info = f"Split at k={k}: {m[i][k]} + {m[k+1][j]} + {dimensions[i]}×{dimensions[k+1]}×{dimensions[j+1]} = {cost}"
-                    k_details.append(k_info)
-                    
-                    if cost < best_cost:
-                        best_cost = cost
-                        best_k = k
-                
-                calculation_details.write("\n".join(k_details))
-                time.sleep(delay)
-                
-                m[i][j] = best_cost
-                s[i][j] = best_k
-                
-                current_step.write(f"Best split at k={best_k} with cost {best_cost}")
-                
-                with vis_placeholder.container():
-                    if viz_method == "Matplotlib":
-                        fig = draw_tables_matplotlib(m, s, highlight_cell=(i, j))
-                        st.pyplot(fig)
-                        plt.close(fig)
-                    else:
-                        chart = draw_tables_altair(m, s, highlight_cell=(i, j))
-                        st.altair_chart(chart, use_container_width=True)
-                
-                time.sleep(delay)
-                
-                current_iteration += 1
-                progress_bar.progress(current_iteration / total_iterations)
-        
-        # Show final results
-        st.markdown("### Results")
-        result_col1, result_col2 = st.columns(2)
-        
-        with result_col1:
-            st.write(f"Minimum number of scalar multiplications: {m[0][n-1]}")
-        
-        with result_col2:
-            optimal_parenthesization = print_optimal_parenthesization(s, 0, n-1)
-            st.write(f"Optimal parenthesization: {optimal_parenthesization}")
-        
-        # Final visualization
-        with vis_placeholder.container():
-            st.write("Final DP tables")
-            if viz_method == "Matplotlib":
-                fig = draw_tables_matplotlib(m, s)
-                st.pyplot(fig)
-                plt.close(fig)
-            else:
-                chart = draw_tables_altair(m, s)
-                st.altair_chart(chart, use_container_width=True)
-        
-        # Explanation
-        st.markdown("### How It Works")
-        st.write("""
-        The algorithm uses dynamic programming to find the optimal way to multiply a sequence of matrices.
-        
-        - The m[i][j] table stores the minimum cost (number of scalar multiplications) to compute the product of matrices A_i through A_j.
-        - The s[i][j] table stores the optimal split point k where the chain is divided into two sub-chains: A_i...A_k and A_(k+1)...A_j.
-        
-        The algorithm fills these tables diagonally, starting with the main diagonal (chain length 1) and working outward.
-        For each cell m[i][j], it tries all possible split points k between i and j, and picks the one that minimizes the cost.
-        """)
+    # Initialize or reset button
+    if not st.session_state.initialized or st.sidebar.button("Reset Algorithm"):
+        reset_algorithm()
     
-    else:
-        st.info("Click 'Run Algorithm' in the sidebar to start the visualization.")
+    # Main visualization area
+    st.subheader("Dynamic Programming Tables")
+    
+    # Add step explanation
+    step_container = st.container()
+    vis_container = st.container()
+    detail_container = st.container()
+    next_step_container = st.container()
+    
+    # Draw current state
+    highlight_cell = None
+    highlight_k = None
+    
+    if not st.session_state.algorithm_complete:
+        highlight_cell = (st.session_state.current_i, st.session_state.current_j)
+        if st.session_state.step_phase == 'evaluate_k':
+            highlight_k = st.session_state.current_k
+    
+    with vis_container:
+        chart = draw_tables_altair(
+            st.session_state.m, 
+            st.session_state.s, 
+            highlight_cell, 
+            highlight_k
+        )
+        st.altair_chart(chart, use_container_width=True)
+    
+    # Show step details
+    with step_container:
+        if st.session_state.algorithm_complete:
+            st.success("Algorithm complete! Final tables shown above.")
+        else:
+            phase = st.session_state.step_phase
+            i = st.session_state.current_i
+            j = st.session_state.current_j
+            k = st.session_state.current_k
+            l = st.session_state.current_l
+            
+            if phase == 'start':
+                st.info(f"Starting calculation for cell m[{i}][{j}] (chain length {l+1})")
+            elif phase == 'evaluate_k':
+                st.info(f"Testing split at k={k} for m[{i}][{j}]")
+            elif phase == 'update_best':
+                st.info(f"Updating m[{i}][{j}] with best cost {st.session_state.best_cost} at split k={st.session_state.best_k}")
+            elif phase == 'next_cell':
+                st.info("Moving to next cell")
+    
+    # Show calculation details
+    with detail_container:
+        if st.session_state.step_phase == 'evaluate_k':
+            i, j, k = st.session_state.current_i, st.session_state.current_j, st.session_state.current_k
+            dims = st.session_state.dimensions
+            st.write(f"**Current calculation:**")
+            st.write(f"m[{i}][{j}] = min_{{k}} (m[{i}][{k}] + m[{k+1}][{j}] + d{i}·d{k+1}·d{j+1})")
+            
+            if k > i:
+                st.write(f"Testing k={k}:")
+                st.write(f"m[{i}][{k}] = {st.session_state.m[i][k]}")
+                st.write(f"m[{k+1}][{j}] = {st.session_state.m[k+1][j]}")
+                st.write(f"d{i}·d{k+1}·d{j+1} = {dims[i]}·{dims[k+1]}·{dims[j+1]} = {dims[i] * dims[k+1] * dims[j+1]}")
+            
+        elif st.session_state.step_phase == 'update_best' or st.session_state.step_phase == 'next_cell':
+            if st.session_state.k_costs:
+                st.write("**Cost for each split point:**")
+                for k, cost in st.session_state.k_costs:
+                    if k == st.session_state.best_k:
+                        st.write(f"k={k}: {cost} ← **BEST**")
+                    else:
+                        st.write(f"k={k}: {cost}")
+        
+        elif st.session_state.algorithm_complete:
+            i, j = 0, len(st.session_state.dimensions) - 2
+            st.write(f"**Final Result:**")
+            st.write(f"Minimum multiplications: {st.session_state.m[i][j]}")
+            parenthesization = print_optimal_parenthesization(st.session_state.s, i, j)
+            st.write(f"Optimal parenthesization: {parenthesization}")
+    
+    # Next step button
+    with next_step_container:
+        if st.session_state.algorithm_complete:
+            if st.button("Restart Algorithm"):
+                reset_algorithm()
+        else:
+            if st.button("Next Step"):
+                handle_next_step()
+    
+    # Show explanation
+    st.subheader("How It Works")
+    with st.expander("Algorithm Explanation"):
+        st.write("""
+        The Matrix Chain Multiplication algorithm uses dynamic programming to find the optimal way to multiply a sequence of matrices.
+        
+        1. **Problem**: Given a chain of matrices A₁, A₂, ..., Aₙ with dimensions d₀×d₁, d₁×d₂, ..., dₙ₋₁×dₙ, find the most efficient way to multiply them together.
+        
+        2. **DP Tables**:
+           - m[i][j] stores the minimum number of scalar multiplications needed to compute A₁ · A₁₊₁ · ... · Aⱼ
+           - s[i][j] stores the optimal split point k where the chain is divided into (A₁...Aₖ)(Aₖ₊₁...Aⱼ)
+        
+        3. **Filling the Tables**:
+           - We fill the tables diagonally, starting with chains of length 1, then length 2, and so on.
+           - For each m[i][j], we try all possible split points k between i and j, and choose the one with minimum cost.
+        
+        4. **Cost Formula**:
+           - m[i][j] = min{ m[i][k] + m[k+1][j] + d₁ × dₖ₊₁ × dⱼ₊₁ } for all k where i ≤ k < j
+        """)
 
 if __name__ == "__main__":
     main()
