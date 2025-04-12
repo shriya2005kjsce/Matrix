@@ -1,7 +1,26 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 import numpy as np
 import time
+
+# Add requirements file for deployment
+# Save this in a file named "requirements.txt" in your repository
+# requirements.txt:
+# streamlit
+# numpy
+# matplotlib
+# altair
+
+# Add import for altair as a backup visualization option
+import altair as alt
+import pandas as pd
+
+# Import matplotlib safely with fallback option
+try:
+    import matplotlib.pyplot as plt
+    matplotlib_available = True
+except ImportError:
+    matplotlib_available = False
+    st.warning("matplotlib is not installed. Using Altair for visualizations instead.")
 
 def matrix_chain_multiplication(dimensions):
     n = len(dimensions) - 1
@@ -27,7 +46,95 @@ def print_optimal_parenthesization(s, i, j):
     else:
         return f"({print_optimal_parenthesization(s, i, s[i][j])} × {print_optimal_parenthesization(s, s[i][j]+1, j)})"
 
-def draw_tables(m, s, highlight_cell=None):
+def create_heatmap_data(matrix, highlight_cell=None):
+    """Create data for Altair heatmap."""
+    n = len(matrix)
+    data = []
+    
+    for i in range(n):
+        for j in range(n):
+            if j >= i:  # Only use upper triangular part
+                value = matrix[i][j]
+                if value == float('inf'):
+                    value_str = "∞"
+                else:
+                    value_str = str(value)
+                
+                highlighted = (highlight_cell and highlight_cell == (i, j))
+                
+                data.append({
+                    'row': i,
+                    'col': j,
+                    'value': value if value != float('inf') else 0,
+                    'label': value_str,
+                    'highlighted': highlighted
+                })
+    
+    return pd.DataFrame(data)
+
+def create_heatmap_chart(df, title, color_scheme='blues'):
+    """Create an Altair heatmap from dataframe."""
+    # Base heatmap
+    base = alt.Chart(df).encode(
+        x=alt.X('col:O', axis=alt.Axis(title='j')),
+        y=alt.Y('row:O', axis=alt.Axis(title='i', orient='left')),
+        tooltip=['row', 'col', 'label']
+    )
+    
+    # Color cells based on value
+    heatmap = base.mark_rect().encode(
+        color=alt.Color('value:Q', 
+                       scale=alt.Scale(scheme=color_scheme),
+                       legend=alt.Legend(title='Value'))
+    )
+    
+    # Add text labels
+    text = base.mark_text().encode(
+        text='label:N',
+        color=alt.condition(
+            alt.datum.value > 100, 
+            alt.value('white'),
+            alt.value('black')
+        )
+    )
+    
+    # Add red border for highlighted cell
+    highlight = base.mark_rect(
+        stroke='red',
+        strokeWidth=2,
+        fill=None
+    ).transform_filter(
+        alt.datum.highlighted == True
+    )
+    
+    # Combine layers
+    chart = (heatmap + text + highlight).properties(
+        title=title,
+        width=300,
+        height=300
+    )
+    
+    return chart
+
+def draw_tables_altair(m, s, highlight_cell=None):
+    """Create Altair charts for m and s tables."""
+    m_data = create_heatmap_data(m, highlight_cell)
+    s_data = create_heatmap_data(s, highlight_cell)
+    
+    m_chart = create_heatmap_chart(m_data, "Cost Table (m)", "blues")
+    s_chart = create_heatmap_chart(s_data, "Split Table (s)", "oranges")
+    
+    combined_chart = alt.hconcat(m_chart, s_chart).properties(
+        title="Matrix Chain Multiplication DP Table Filling"
+    )
+    
+    return combined_chart
+
+def draw_tables_matplotlib(m, s, highlight_cell=None):
+    """Create matplotlib visualization for m and s tables."""
+    if not matplotlib_available:
+        return None
+        
     n = len(m)
     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
     fig.suptitle("Matrix Chain Multiplication DP Table Filling", fontsize=16)
@@ -91,12 +198,31 @@ def main():
     animation_speed = st.sidebar.slider("Animation Speed", min_value=0.1, max_value=3.0, value=1.0, step=0.1)
     delay = 1 / animation_speed
     
+    # Visualization method
+    viz_method = st.sidebar.radio(
+        "Visualization Method",
+        ["Auto (Recommended)", "Altair", "Matplotlib"],
+        index=0,
+        help="Choose the visualization library. Auto will use Matplotlib if available, otherwise Altair."
+    )
+    
+    if viz_method == "Matplotlib" and not matplotlib_available:
+        st.warning("Matplotlib is not available. Using Altair instead.")
+        viz_method = "Altair"
+    
+    if viz_method == "Auto (Recommended)":
+        viz_method = "Matplotlib" if matplotlib_available else "Altair"
+    
     # Display matrix information
     st.markdown("### Input Matrices")
-    matrix_info = ""
+    matrix_info = []
     for i in range(len(dimensions) - 1):
-        matrix_info += f"A{i+1}: {dimensions[i]}×{dimensions[i+1]}  "
-    st.write(matrix_info)
+        matrix_info.append(f"A{i+1}: {dimensions[i]}×{dimensions[i+1]}")
+    
+    # Format as columns for better display
+    cols = st.columns(min(5, len(matrix_info)))
+    for i, matrix in enumerate(matrix_info):
+        cols[i % len(cols)].write(matrix)
     
     # Run button
     if st.sidebar.button("Run Algorithm"):
@@ -112,15 +238,22 @@ def main():
             st.markdown("### Visualization")
             vis_placeholder = st.empty()
             progress_bar = st.progress(0)
-            current_step = st.empty()
-            calculation_details = st.empty()
+            info_col1, info_col2 = st.columns(2)
+            with info_col1:
+                current_step = st.empty()
+            with info_col2:
+                calculation_details = st.empty()
         
         # Show initial state
         with vis_placeholder.container():
             st.write("Initial state: diagonal elements are 0")
-            fig = draw_tables(m, s)
-            st.pyplot(fig)
-            plt.close(fig)
+            if viz_method == "Matplotlib":
+                fig = draw_tables_matplotlib(m, s)
+                st.pyplot(fig)
+                plt.close(fig)
+            else:
+                chart = draw_tables_altair(m, s)
+                st.altair_chart(chart, use_container_width=True)
         
         # Fill DP tables with visualization
         total_iterations = sum(range(1, n))
@@ -134,9 +267,13 @@ def main():
                 current_step.write(f"Computing m[{i}][{j}] for chain length {l+1}")
                 
                 with vis_placeholder.container():
-                    fig = draw_tables(m, s, highlight_cell=(i, j))
-                    st.pyplot(fig)
-                    plt.close(fig)
+                    if viz_method == "Matplotlib":
+                        fig = draw_tables_matplotlib(m, s, highlight_cell=(i, j))
+                        st.pyplot(fig)
+                        plt.close(fig)
+                    else:
+                        chart = draw_tables_altair(m, s, highlight_cell=(i, j))
+                        st.altair_chart(chart, use_container_width=True)
                 
                 time.sleep(delay)
                 
@@ -147,7 +284,7 @@ def main():
                 for k in range(i, j):
                     cost = m[i][k] + m[k+1][j] + dimensions[i] * dimensions[k+1] * dimensions[j+1]
                     
-                    k_info = f"Split at k={k}: m[{i}][{k}]({m[i][k]}) + m[{k+1}][{j}]({m[k+1][j]}) + {dimensions[i]}×{dimensions[k+1]}×{dimensions[j+1]} = {cost}"
+                    k_info = f"Split at k={k}: {m[i][k]} + {m[k+1][j]} + {dimensions[i]}×{dimensions[k+1]}×{dimensions[j+1]} = {cost}"
                     k_details.append(k_info)
                     
                     if cost < best_cost:
@@ -163,9 +300,13 @@ def main():
                 current_step.write(f"Best split at k={best_k} with cost {best_cost}")
                 
                 with vis_placeholder.container():
-                    fig = draw_tables(m, s, highlight_cell=(i, j))
-                    st.pyplot(fig)
-                    plt.close(fig)
+                    if viz_method == "Matplotlib":
+                        fig = draw_tables_matplotlib(m, s, highlight_cell=(i, j))
+                        st.pyplot(fig)
+                        plt.close(fig)
+                    else:
+                        chart = draw_tables_altair(m, s, highlight_cell=(i, j))
+                        st.altair_chart(chart, use_container_width=True)
                 
                 time.sleep(delay)
                 
@@ -174,16 +315,25 @@ def main():
         
         # Show final results
         st.markdown("### Results")
-        st.write(f"Minimum number of scalar multiplications: {m[0][n-1]}")
-        optimal_parenthesization = print_optimal_parenthesization(s, 0, n-1)
-        st.write(f"Optimal parenthesization: {optimal_parenthesization}")
+        result_col1, result_col2 = st.columns(2)
+        
+        with result_col1:
+            st.write(f"Minimum number of scalar multiplications: {m[0][n-1]}")
+        
+        with result_col2:
+            optimal_parenthesization = print_optimal_parenthesization(s, 0, n-1)
+            st.write(f"Optimal parenthesization: {optimal_parenthesization}")
         
         # Final visualization
         with vis_placeholder.container():
             st.write("Final DP tables")
-            fig = draw_tables(m, s)
-            st.pyplot(fig)
-            plt.close(fig)
+            if viz_method == "Matplotlib":
+                fig = draw_tables_matplotlib(m, s)
+                st.pyplot(fig)
+                plt.close(fig)
+            else:
+                chart = draw_tables_altair(m, s)
+                st.altair_chart(chart, use_container_width=True)
         
         # Explanation
         st.markdown("### How It Works")
