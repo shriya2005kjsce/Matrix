@@ -40,27 +40,31 @@ def matrix_chain_order(p):
                 cost = m[i][k] + m[k + 1][j] + p[i] * p[k + 1] * p[j + 1]
                 if cost < m[i][j]:
                     m[i][j] = cost
-                    s[i][j] = k+1
+                    s[i][j] = k
     return m, s
 
 # Steps for simulation
 @st.cache_data
-def generate_steps(p):
+def generate_steps(p, m_table):
     n = len(p) - 1
     steps = []
     for chain_len in range(2, n + 1):
         for i in range(n - chain_len + 1):
             j = i + chain_len - 1
             min_cost = float('inf')
+            best_k = -1
             for k in range(i, j):
                 cost = (
-                    (0 if i == k else m[i][k])
-                    + (0 if k + 1 == j else m[k + 1][j])
+                    (0 if i == k else m_table[i][k])
+                    + (0 if k + 1 == j else m_table[k + 1][j])
                     + p[i] * p[k + 1] * p[j + 1]
                 )
-                steps.append({
-                    "i": i + 1, "j": j + 1, "k": k + 1, "cost": cost
-                })
+                if cost < min_cost:
+                    min_cost = cost
+                    best_k = k
+            steps.append({
+                "i": i + 1, "j": j + 1, "k": best_k + 1, "cost": min_cost
+            })
     return steps
 
 # Format matrix for display
@@ -77,6 +81,15 @@ def create_simulation_table(step, n):
     matrix[i - 1][j - 1] = f"{step['cost']} (k={k})"
     return format_matrix(matrix)
 
+# Format split matrix for display with +1
+def format_split_matrix(matrix):
+    n = len(matrix)
+    formatted_matrix = [[matrix[i][j] + 1 if matrix[i][j] != 0 else "" for j in range(n)] for i in range(n)]
+    df = pd.DataFrame(formatted_matrix)
+    df.index = [f"A{i+1}" for i in range(n)]
+    df.columns = [f"A{j+1}" for j in range(n)]
+    return df
+
 # Parse input
 dims = parse_dimensions(dims_input)
 
@@ -86,7 +99,7 @@ if dims:
         st.markdown(f"*A{i+1}: {dims[i]}×{dims[i+1]}*")
 
     m, s = matrix_chain_order(dims)
-    steps = generate_steps(dims)
+    steps = generate_steps(dims, m)
     n = len(dims) - 1
 
     # Step control
@@ -116,7 +129,7 @@ if dims:
         st.dataframe(format_matrix(m), use_container_width=True)
     with col2:
         st.markdown("*Split Table (s)*")
-        st.dataframe(format_matrix(s), use_container_width=True)
+        st.dataframe(format_split_matrix(s), use_container_width=True)
 
     # Optimal parenthesization
     def print_optimal_parens(s, i, j):
