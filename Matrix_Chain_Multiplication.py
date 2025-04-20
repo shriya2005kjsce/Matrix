@@ -1,147 +1,132 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
 st.set_page_config(page_title="Matrix Chain Multiplication", layout="wide")
 st.title("🧮 Matrix Chain Multiplication - Step by Step")
 
-# Sidebar
+# Sidebar input
 st.sidebar.header("Setup")
-dims_input = st.sidebar.text_input(
-    "Matrix Dimensions",
-    value="5,4,6,2,7",
-    help="Enter dimensions as comma-separated values (e.g., 10,20,30,40)"
-)
-reset = st.sidebar.button("Reset")
+dims_input = st.sidebar.text_input("Matrix Dimensions", value="5,4,6,2,7")
+reset = st.sidebar.button("Reset Algorithm")
 
-# Helper to parse dimensions
+if reset:
+    st.session_state.clear()
+    st.experimental_rerun()
+
+# Validate input
 def parse_dimensions(input_str):
     try:
         dims = list(map(int, input_str.strip().split(',')))
         if len(dims) < 2:
-            st.error("Please enter at least two dimensions (like 5,4).")
+            st.error("Enter at least two dimensions (e.g., 5,4).")
             return None
         return dims
     except ValueError:
-        st.error("Please enter only comma-separated integers.")
+        st.error("Only comma-separated integers allowed.")
         return None
 
-dims = parse_dimensions(dims_input)
-
-# Reset session state
-if reset or 'step' not in st.session_state:
-    st.session_state.step = 0
-    st.session_state.steps_list = []
-    st.session_state.m = []
-    st.session_state.s = []
-
-# Compute steps and fill m/s tables
-def generate_steps(dims):
-    n = len(dims) - 1
-    m = [[0 for _ in range(n)] for _ in range(n)]
-    s = [[-1 for _ in range(n)] for _ in range(n)]
-    steps = []
+# Matrix Chain Multiplication DP
+@st.cache_data
+def matrix_chain_order(p):
+    n = len(p) - 1
+    m = [[0] * n for _ in range(n)]
+    s = [[0] * n for _ in range(n)]
 
     for chain_len in range(2, n + 1):
         for i in range(n - chain_len + 1):
             j = i + chain_len - 1
             m[i][j] = float('inf')
             for k in range(i, j):
-                cost = m[i][k] + m[k+1][j] + dims[i] * dims[k+1] * dims[j+1]
-                steps.append({
-                    "i": i, "j": j, "k": k,
-                    "cost": cost,
-                    "prev_cost": m[i][j],
-                    "dims": (dims[i], dims[k+1], dims[j+1]),
-                    "update": cost < m[i][j]
-                })
+                cost = m[i][k] + m[k + 1][j] + p[i] * p[k + 1] * p[j + 1]
                 if cost < m[i][j]:
                     m[i][j] = cost
                     s[i][j] = k
-    return m, s, steps
+    return m, s
 
-# Initialize tables and steps once
-if dims and not st.session_state.steps_list:
-    if len(dims) < 3:
-        st.warning("At least two matrices (3 dimensions) are required.")
-        st.stop()
-    m, s, steps_list = generate_steps(dims)
-    st.session_state.m = m
-    st.session_state.s = s
-    st.session_state.steps_list = steps_list
+# Steps for simulation
+@st.cache_data
+def generate_steps(p):
+    n = len(p) - 1
+    steps = []
+    for chain_len in range(2, n + 1):
+        for i in range(n - chain_len + 1):
+            j = i + chain_len - 1
+            min_cost = float('inf')
+            for k in range(i, j):
+                cost = (
+                    (0 if i == k else m[i][k])
+                    + (0 if k + 1 == j else m[k + 1][j])
+                    + p[i] * p[k + 1] * p[j + 1]
+                )
+                steps.append({
+                    "i": i + 1, "j": j + 1, "k": k + 1, "cost": cost
+                })
+    return steps
 
-# Buttons for navigation
-colA, colB = st.columns([1, 1])
-with colA:
-    if st.button("⬅️ Previous Step") and st.session_state.step > 0:
-        st.session_state.step -= 1
-with colB:
-    if st.button("Next Step ➡️") and st.session_state.step < len(st.session_state.steps_list) - 1:
-        st.session_state.step += 1
+# Format matrix for display
+def format_matrix(matrix):
+    df = pd.DataFrame(matrix)
+    df.index = [f"A{i+1}" for i in range(len(matrix))]
+    df.columns = [f"A{j+1}" for j in range(len(matrix[0]))]
+    return df
 
-# Show matrices involved
+# Show current simulation step
+def create_simulation_table(step, n):
+    matrix = [["" for _ in range(n)] for _ in range(n)]
+    i, j, k = step['i'], step['j'], step['k']
+    matrix[i - 1][j - 1] = f"{step['cost']} (k={k})"
+    return format_matrix(matrix)
+
+# Parse input
+dims = parse_dimensions(dims_input)
+
 if dims:
     st.subheader("📥 Input Matrices")
     for i in range(len(dims) - 1):
         st.markdown(f"*A{i+1}: {dims[i]}×{dims[i+1]}*")
 
-# Show current step info
-if dims and st.session_state.steps_list:
-    step_data = st.session_state.steps_list[st.session_state.step]
-    i, j, k = step_data["i"], step_data["j"], step_data["k"]
-    cost, prev, update = step_data["cost"], step_data["prev_cost"], step_data["update"]
-    d1, d2, d3 = step_data["dims"]
+    m, s = matrix_chain_order(dims)
+    steps = generate_steps(dims)
+    n = len(dims) - 1
 
-    st.subheader("🔍 Current Step")
-    st.markdown(f"**Updating m[{i+1},{j+1}] with split at k = {k+1}**")
-    st.markdown(f"Cost = m[{i+1},{k+1}] + m[{k+2},{j+1}] + {d1}×{d2}×{d3} = {cost}")
-    if update:
-        st.success(f"✅ Updated m[{i+1},{j+1}] from {prev} to {cost}")
-    else:
-        st.info(f"ℹ️ No update. Current m[{i+1},{j+1}] = {prev}")
+    # Step control
+    if "step_index" not in st.session_state:
+        st.session_state.step_index = 0
 
-# Show simulation table for current step
-def format_simulation(step, dims_len):
-    n = dims_len - 1
-    matrix = [["" for _ in range(n)] for _ in range(n)]
-    i, j = step["i"], step["j"]
-    matrix[i][j] = f"{step['cost']} (k={step['k']+1})"
-    df = pd.DataFrame(matrix)
-    df.index = [f"A{i+1}" for i in range(n)]
-    df.columns = [f"A{j+1}" for j in range(n)]
-    return df
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("⬅️ Previous Step"):
+            if st.session_state.step_index > 0:
+                st.session_state.step_index -= 1
+    with col_btn2:
+        if st.button("Next Step ➡️"):
+            if st.session_state.step_index < len(steps) - 1:
+                st.session_state.step_index += 1
 
-st.subheader("📽️ Simulation (Current Step Only)")
-st.dataframe(format_simulation(st.session_state.steps_list[st.session_state.step], len(dims)), use_container_width=True)
+    # Show simulation table
+    st.subheader("🧪 Simulation - Current Step")
+    step_table = create_simulation_table(steps[st.session_state.step_index], n)
+    st.dataframe(step_table, use_container_width=True)
 
-# Final tables (unchanged)
-def format_matrix(matrix):
-    df = pd.DataFrame(matrix)
-    df.replace(float('inf'), '∞', inplace=True)
-    df.index = [f"A{i+1}" for i in range(len(matrix))]
-    df.columns = [f"A{j+1}" for j in range(len(matrix[0]))]
-    return df
+    # Show final cost and split tables
+    st.subheader("📊 Dynamic Programming Tables")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("*Cost Table (m)*")
+        st.dataframe(format_matrix(m), use_container_width=True)
+    with col2:
+        st.markdown("*Split Table (s)*")
+        st.dataframe(format_matrix(s), use_container_width=True)
 
-st.subheader("📊 Tables (Final after all steps)")
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("*Cost Table (m)*")
-    st.dataframe(format_matrix(st.session_state.m), use_container_width=True)
-with col2:
-    st.markdown("*Split Table (s)*")
-    st.dataframe(format_matrix(st.session_state.s), use_container_width=True)
+    # Optimal parenthesization
+    def print_optimal_parens(s, i, j):
+        if i == j:
+            return f"A{i+1}"
+        else:
+            return f"({print_optimal_parens(s, i, s[i][j])} × {print_optimal_parens(s, s[i][j] + 1, j)})"
 
-# Parenthesis construction
-def print_optimal_parens(s, i, j):
-    if i == j:
-        return f"A{i+1}"
-    else:
-        return f"({print_optimal_parens(s, i, s[i][j])} × {print_optimal_parens(s, s[i][j]+1, j)})"
-
-if st.session_state.step == len(st.session_state.steps_list) - 1:
     st.subheader("✅ Optimal Parenthesization")
-    result = print_optimal_parens(st.session_state.s, 0, len(dims)-2)
-    st.markdown(f"**{result}**")
-    st.success(f"Minimum number of scalar multiplications: {st.session_state.m[0][len(dims)-2]}")
-else:
-    st.info("Step through all operations to view final result.")
+    optimal_order = print_optimal_parens(s, 0, n - 1)
+    st.code(optimal_order)
+
+    st.success(f"Minimum number of scalar multiplications: {m[0][n - 1]}")
