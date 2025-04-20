@@ -38,14 +38,13 @@ if reset or 'step' not in st.session_state:
 # Compute steps and fill m/s tables
 def generate_steps(dims):
     n = len(dims) - 1
-    m = [[0 for _ in range(n)] for _ in range(n)]
-    s = [[-1 for _ in range(n)] for _ in range(n)]
+    m = [[0 if i == j else float('inf') for j in range(n)] for i in range(n)]
+    s = [[0 if i == j else -1 for j in range(n)] for i in range(n)]
     steps = []
 
     for chain_len in range(2, n + 1):
         for i in range(n - chain_len + 1):
             j = i + chain_len - 1
-            m[i][j] = float('inf')
             for k in range(i, j):
                 cost = m[i][k] + m[k+1][j] + dims[i] * dims[k+1] * dims[j+1]
                 steps.append({
@@ -120,10 +119,31 @@ else:
 
 # Final tables (unchanged)
 def format_matrix(matrix):
-    df = pd.DataFrame(matrix)
-    df.replace(float('inf'), '∞', inplace=True)
-    df.index = [f"A{i+1}" for i in range(len(matrix))]
-    df.columns = [f"A{j+1}" for j in range(len(matrix[0]))]
+    n = len(matrix)
+    formatted_matrix = [["" for _ in range(n)] for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            if i < j:
+                formatted_matrix[i][j] = matrix[i][j] if matrix[i][j] != float('inf') else '∞'
+            elif i == j:
+                formatted_matrix[i][j] = 0
+    df = pd.DataFrame(formatted_matrix)
+    df.index = [f"A{i+1}" for i in range(n)]
+    df.columns = [f"A{j+1}" for j in range(n)]
+    return df
+
+def format_split_matrix(matrix):
+    n = len(matrix)
+    formatted_matrix = [["" for _ in range(n)] for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            if i < j:
+                formatted_matrix[i][j] = matrix[i][j] + 1 if matrix[i][j] != -1 else ''
+            elif i == j:
+                formatted_matrix[i][j] = 0
+    df = pd.DataFrame(formatted_matrix)
+    df.index = [f"A{i+1}" for i in range(n)]
+    df.columns = [f"A{j+1}" for j in range(n)]
     return df
 
 st.subheader("📊 Tables (Final after all steps)")
@@ -137,11 +157,7 @@ with col1:
 with col2:
     st.markdown("Split Table (s)")
     if st.session_state.s:
-        s_formatted = [[val + 1 if val != -1 else "" for val in row] for row in st.session_state.s]
-        df_s = pd.DataFrame(s_formatted)
-        df_s.index = [f"A{i+1}" for i in range(len(st.session_state.s))]
-        df_s.columns = [f"A{j+1}" for j in range(len(st.session_state.s[0]))]
-        st.dataframe(df_s, use_container_width=True)
+        st.dataframe(format_split_matrix(st.session_state.s), use_container_width=True)
     else:
         st.info("Split table will be shown after the simulation runs.")
 
