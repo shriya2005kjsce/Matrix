@@ -40,7 +40,7 @@ def matrix_chain_order(p):
                 cost = m[i][k] + m[k + 1][j] + p[i] * p[k + 1] * p[j + 1]
                 if cost < m[i][j]:
                     m[i][j] = cost
-                    s[i][j] = k
+                    s[i][j] = k+1
     return m, s
 
 # Steps for simulation
