@@ -85,7 +85,7 @@ if dims:
     for i in range(len(dims) - 1):
         st.markdown(f"*A{i+1}: {dims[i]}×{dims[i+1]}*")
 
-# Show current step
+# Show current step info
 if dims and st.session_state.steps_list:
     step_data = st.session_state.steps_list[st.session_state.step]
     i, j, k = step_data["i"], step_data["j"], step_data["k"]
@@ -93,15 +93,28 @@ if dims and st.session_state.steps_list:
     d1, d2, d3 = step_data["dims"]
 
     st.subheader("🔍 Current Step")
-    st.markdown(f"**Calculating m[{i+1},{j+1}] with split at k = {k+1}**")
+    st.markdown(f"**Updating m[{i+1},{j+1}] with split at k = {k+1}**")
     st.markdown(f"Cost = m[{i+1},{k+1}] + m[{k+2},{j+1}] + {d1}×{d2}×{d3} = {cost}")
-
     if update:
         st.success(f"✅ Updated m[{i+1},{j+1}] from {prev} to {cost}")
     else:
         st.info(f"ℹ️ No update. Current m[{i+1},{j+1}] = {prev}")
 
-# Final tables display
+# Show simulation table for current step
+def format_simulation(step, dims_len):
+    n = dims_len - 1
+    matrix = [["" for _ in range(n)] for _ in range(n)]
+    i, j = step["i"], step["j"]
+    matrix[i][j] = f"{step['cost']} (k={step['k']+1})"
+    df = pd.DataFrame(matrix)
+    df.index = [f"A{i+1}" for i in range(n)]
+    df.columns = [f"A{j+1}" for j in range(n)]
+    return df
+
+st.subheader("📽️ Simulation (Current Step Only)")
+st.dataframe(format_simulation(st.session_state.steps_list[st.session_state.step], len(dims)), use_container_width=True)
+
+# Final tables (unchanged)
 def format_matrix(matrix):
     df = pd.DataFrame(matrix)
     df.replace(float('inf'), '∞', inplace=True)
