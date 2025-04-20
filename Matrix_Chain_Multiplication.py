@@ -82,13 +82,13 @@ def create_simulation_table(step, n):
     return format_matrix(matrix)
 
 # Format split matrix for display with +1
-def format_split_matrix(matrix):
-    n = len(matrix)
-    formatted_matrix = [[matrix[i][j] + 1 if matrix[i][j] != 0 else "" for j in range(n)] for i in range(n)]
-    df = pd.DataFrame(formatted_matrix)
-    df.index = [f"A{i+1}" for i in range(n)]
-    df.columns = [f"A{j+1}" for j in range(n)]
-    return df
+def format_split_matrix(s_matrix):
+    n = len(s_matrix)
+    formatted_s = [[s_matrix[i][j] + 1 if s_matrix[i][j] != 0 else "" for j in range(n)] for i in range(n)]
+    df_s = pd.DataFrame(formatted_s)
+    df_s.index = [f"i={i+1}" for i in range(n)]
+    df_s.columns = [f"j={j+1}" for j in range(n)]
+    return df_s
 
 # Parse input
 dims = parse_dimensions(dims_input)
