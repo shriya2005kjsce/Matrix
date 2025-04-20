@@ -5,19 +5,16 @@ import numpy as np
 st.set_page_config(page_title="Matrix Chain Multiplication", layout="wide")
 st.title("🧮 Matrix Chain Multiplication - Step by Step")
 
-# Sidebar input
+# Sidebar
 st.sidebar.header("Setup")
 dims_input = st.sidebar.text_input(
     "Matrix Dimensions",
     value="5,4,6,2,7",
     help="Enter dimensions as comma-separated values (e.g., 10,20,30,40)"
 )
-reset = st.sidebar.button("Reset Algorithm")
+reset = st.sidebar.button("Reset")
 
-if reset:
-    st.experimental_rerun()
-
-# Helper function to parse and validate input
+# Helper to parse dimensions
 def parse_dimensions(input_str):
     try:
         dims = list(map(int, input_str.strip().split(',')))
@@ -29,25 +26,82 @@ def parse_dimensions(input_str):
         st.error("Please enter only comma-separated integers.")
         return None
 
-# Cached function to compute cost and split tables
-@st.cache_data
-def matrix_chain_order(p):
-    n = len(p) - 1
+dims = parse_dimensions(dims_input)
+
+# Reset session state
+if reset or 'step' not in st.session_state:
+    st.session_state.step = 0
+    st.session_state.steps_list = []
+    st.session_state.m = []
+    st.session_state.s = []
+
+# Compute steps and fill m/s tables
+def generate_steps(dims):
+    n = len(dims) - 1
     m = [[0 for _ in range(n)] for _ in range(n)]
-    s = [[0 for _ in range(n)] for _ in range(n)]
+    s = [[-1 for _ in range(n)] for _ in range(n)]
+    steps = []
 
     for chain_len in range(2, n + 1):
         for i in range(n - chain_len + 1):
             j = i + chain_len - 1
             m[i][j] = float('inf')
             for k in range(i, j):
-                cost = m[i][k] + m[k + 1][j] + p[i] * p[k + 1] * p[j + 1]
+                cost = m[i][k] + m[k+1][j] + dims[i] * dims[k+1] * dims[j+1]
+                steps.append({
+                    "i": i, "j": j, "k": k,
+                    "cost": cost,
+                    "prev_cost": m[i][j],
+                    "dims": (dims[i], dims[k+1], dims[j+1]),
+                    "update": cost < m[i][j]
+                })
                 if cost < m[i][j]:
                     m[i][j] = cost
                     s[i][j] = k
-    return m, s
+    return m, s, steps
 
-# Format matrix for display
+# Initialize tables and steps once
+if dims and not st.session_state.steps_list:
+    if len(dims) < 3:
+        st.warning("At least two matrices (3 dimensions) are required.")
+        st.stop()
+    m, s, steps_list = generate_steps(dims)
+    st.session_state.m = m
+    st.session_state.s = s
+    st.session_state.steps_list = steps_list
+
+# Buttons for navigation
+colA, colB = st.columns([1, 1])
+with colA:
+    if st.button("⬅️ Previous Step") and st.session_state.step > 0:
+        st.session_state.step -= 1
+with colB:
+    if st.button("Next Step ➡️") and st.session_state.step < len(st.session_state.steps_list) - 1:
+        st.session_state.step += 1
+
+# Show matrices involved
+if dims:
+    st.subheader("📥 Input Matrices")
+    for i in range(len(dims) - 1):
+        st.markdown(f"*A{i+1}: {dims[i]}×{dims[i+1]}*")
+
+# Show current step
+if dims and st.session_state.steps_list:
+    step_data = st.session_state.steps_list[st.session_state.step]
+    i, j, k = step_data["i"], step_data["j"], step_data["k"]
+    cost, prev, update = step_data["cost"], step_data["prev_cost"], step_data["update"]
+    d1, d2, d3 = step_data["dims"]
+
+    st.subheader("🔍 Current Step")
+    st.markdown(f"**Calculating m[{i+1},{j+1}] with split at k = {k+1}**")
+    st.markdown(f"Cost = m[{i+1},{k+1}] + m[{k+2},{j+1}] + {d1}×{d2}×{d3} = {cost}")
+
+    if update:
+        st.success(f"✅ Updated m[{i+1},{j+1}] from {prev} to {cost}")
+    else:
+        st.info(f"ℹ️ No update. Current m[{i+1},{j+1}] = {prev}")
+
+# Final tables display
 def format_matrix(matrix):
     df = pd.DataFrame(matrix)
     df.replace(float('inf'), '∞', inplace=True)
@@ -55,43 +109,26 @@ def format_matrix(matrix):
     df.columns = [f"A{j+1}" for j in range(len(matrix[0]))]
     return df
 
-# Parse input
-dims = parse_dimensions(dims_input)
+st.subheader("📊 Tables (Final after all steps)")
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("*Cost Table (m)*")
+    st.dataframe(format_matrix(st.session_state.m), use_container_width=True)
+with col2:
+    st.markdown("*Split Table (s)*")
+    st.dataframe(format_matrix(st.session_state.s), use_container_width=True)
 
-# If valid input, display matrices and results
-if dims:
-    if len(dims) < 3:
-        st.warning("At least two matrices (3 dimensions) are required for multiplication.")
-        st.stop()
+# Parenthesis construction
+def print_optimal_parens(s, i, j):
+    if i == j:
+        return f"A{i+1}"
+    else:
+        return f"({print_optimal_parens(s, i, s[i][j])} × {print_optimal_parens(s, s[i][j]+1, j)})"
 
-    st.subheader("📥 Input Matrices")
-    for i in range(len(dims) - 1):
-        st.markdown(f"*A{i+1}: {dims[i]}×{dims[i+1]}*")
-
-    # Compute MCM
-    m, s = matrix_chain_order(dims)
-
-    # Show dynamic programming tables
-    st.subheader("📊 Dynamic Programming Tables")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("*Cost Table (m)*")
-        st.dataframe(format_matrix(m), use_container_width=True)
-    with col2:
-        st.markdown("*Split Table (s)*")
-        st.dataframe(format_matrix(s), use_container_width=True)
-
-    # Recursive function to build optimal parenthesization
-    def print_optimal_parens(s, i, j):
-        if i == j:
-            return f"A{i+1}"
-        else:
-            return f"({print_optimal_parens(s, i, s[i][j])} × {print_optimal_parens(s, s[i][j] + 1, j)})"
-
-    # Display final result
+if st.session_state.step == len(st.session_state.steps_list) - 1:
     st.subheader("✅ Optimal Parenthesization")
-    optimal_order = print_optimal_parens(s, 0, len(dims) - 2)
-    st.markdown(f"**{optimal_order}**")
-
-    st.success(f"Minimum number of scalar multiplications: {m[0][len(dims) - 2]}")
-
+    result = print_optimal_parens(st.session_state.s, 0, len(dims)-2)
+    st.markdown(f"**{result}**")
+    st.success(f"Minimum number of scalar multiplications: {st.session_state.m[0][len(dims)-2]}")
+else:
+    st.info("Step through all operations to view final result.")
